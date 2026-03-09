@@ -29,23 +29,33 @@ function resolveFilePath(inputPath) {
   return resolve(normalize(trimmed));
 }
 
-/** Read CIFs from column A of an XLSX file. Returns array of non-empty strings. */
-function readCifsFromXlsx(filePath) {
+/**
+ * Read rows from XLSX: column A = document type (CIF, NIF, DNI/NIF), column B = document number.
+ * Returns array of { docType: 'CIF' | 'NIF', value: string }.
+ * If only one column is present, value is taken from A and docType defaults to 'CIF'.
+ */
+function readRowsFromXlsx(filePath) {
   const buf = readFileSync(filePath);
   const workbook = XLSX.read(buf, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-  const cifs = [];
+  const rows = [];
   for (let i = 0; i < data.length; i++) {
-    const cell = data[i][0];
-    if (cell != null && String(cell).trim() !== '') {
-      const val = String(cell).trim();
-      if (i === 0 && (val.toLowerCase() === 'cif' || val.toLowerCase() === 'id' || val === 'CIF')) continue;
-      cifs.push(val);
-    }
+    const a = data[i][0];
+    const b = data[i][1];
+    const typeRaw = a != null ? String(a).trim() : '';
+    const valueB = b != null ? String(b).trim() : '';
+    const valueA = a != null ? String(a).trim() : '';
+    const hasTwoCols = valueB !== '';
+    const value = hasTwoCols ? valueB : valueA;
+    if (!value) continue;
+    const headerLike = (v) => /^(tipo|type|id|n[uú]mero|documento|value|numero)$/i.test(String(v).trim());
+    if (i === 0 && hasTwoCols && (headerLike(typeRaw) || headerLike(value))) continue;
+    const docType = hasTwoCols ? ((typeRaw.toUpperCase() === 'CIF') ? 'CIF' : 'NIF') : 'CIF';
+    rows.push({ docType, value });
   }
-  return cifs;
+  return rows;
 }
 
 /** Write result matrix to XLSX: same directory as input, name = {basename}_resultado.xlsx */
@@ -216,7 +226,7 @@ async function runDiagnostics(page, contextLabel = 'page') {
 
 // ── Tiendas flow (after main login) ────────────────────────────────────────
 
-async function runTiendasFlow(page, config, cifs) {
+async function runTiendasFlow(page, config, rows) {
   const tiendas = config.tiendas || {};
   const homeUrl = tiendas.homeUrl || 'https://w1.tiendas.ztna.telefonicaservices.com/w1/inicio/home';
   const baseUrl = tiendas.baseUrl || 'https://w1.tiendas.ztna.telefonicaservices.com/w1/';
@@ -272,9 +282,9 @@ async function runTiendasFlow(page, config, cifs) {
   const frameContenidoName = 'W1DefaultW1';
   const resultData = [];
 
-  for (let i = 0; i < cifs.length; i++) {
-    const cif = cifs[i];
-    console.log(`Processing CIF ${i + 1}/${cifs.length}: ${cif}`);
+  for (let i = 0; i < rows.length; i++) {
+    const { docType, value } = rows[i];
+    console.log(`Processing ${docType} ${i + 1}/${rows.length}: ${value}`);
 
     try {
       await goToSearchForm(page, frameCabeceraName, frameContenidoName);
@@ -283,7 +293,11 @@ async function runTiendasFlow(page, config, cifs) {
       const tipoDocDropdown = content.locator('button[data-id="_Tipodocumento_id"]');
       await tipoDocDropdown.click();
       await sleep(STEP_DELAY_MS);
-      await content.locator('li a:has-text("CIF")').click();
+      if (docType === 'CIF') {
+        await content.locator('li a:has-text("CIF")').click();
+      } else {
+        await content.locator('li a:has-text("DNI/NIF")').click();
+      }
       await sleep(STEP_DELAY_MS);
 
       const contextDropdown = content.locator('button[data-id="_Contexto_id"]');
@@ -295,7 +309,7 @@ async function runTiendasFlow(page, config, cifs) {
 
       for (let attempt = 1; attempt <= maxSubmitAttempts; attempt++) {
         await docInput.fill('');
-        await docInput.fill(cif);
+        await docInput.fill(value);
         await sleep(STEP_DELAY_MS);
 
         await contextDropdown.click();
@@ -373,13 +387,13 @@ async function runTiendasFlow(page, config, cifs) {
         break;
       }
 
-      resultData.push({ cif, descripciones, abonos });
+      resultData.push({ cif: value, descripciones, abonos });
     } catch (err) {
-      console.error(`CIF ${cif} failed:`, err.message);
-      resultData.push({ cif, descripciones: [`Error: ${err.message}`], abonos: [] });
+      console.error(`${docType} ${value} failed:`, err.message);
+      resultData.push({ cif: value, descripciones: [`Error: ${err.message}`], abonos: [] });
     }
 
-    if (i < cifs.length - 1) await sleep(STEP_DELAY_MS);
+    if (i < rows.length - 1) await sleep(STEP_DELAY_MS);
   }
 
   const numDescCols = Math.max(...resultData.map(d => d.descripciones.length), 1);
@@ -400,7 +414,7 @@ async function runTiendasFlow(page, config, cifs) {
 // ── Main ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  const filePath = await prompt('Enter the XLSX file path (column A = CIFs): ');
+  const filePath = await prompt('Enter the XLSX file path (column A = document type CIF/NIF, column B = number): ');
   const resolvedPath = resolveFilePath(filePath);
 
   if (!existsSync(resolvedPath)) {
@@ -415,23 +429,23 @@ async function main() {
     process.exit(1);
   }
 
-  let cifs;
+  let rows;
   try {
-    cifs = readCifsFromXlsx(resolvedPath);
+    rows = readRowsFromXlsx(resolvedPath);
   } catch (e) {
     console.error('Error reading XLSX:', e.message);
     rl.close();
     process.exit(1);
   }
 
-  if (!cifs.length) {
-    console.error('Error: No CIFs found in column A');
+  if (!rows.length) {
+    console.error('Error: No rows found (column A = document type CIF/NIF, column B = number)');
     rl.close();
     process.exit(1);
   }
 
   console.log(`File: ${resolvedPath}`);
-  console.log(`CIFs found: ${cifs.length}`);
+  console.log(`Rows found: ${rows.length}`);
 
   const config = loadConfig();
   console.log(`\nLogging in as: ${config.username}`);
@@ -528,9 +542,9 @@ async function main() {
 
     console.log('\nLogin successful. Running tiendas flow...');
 
-    const { headers, rows } = await runTiendasFlow(page, config, cifs);
+    const { headers, rows: resultRows } = await runTiendasFlow(page, config, rows);
 
-    const outPath = writeResultXlsx(resolvedPath, headers, rows);
+    const outPath = writeResultXlsx(resolvedPath, headers, resultRows);
     console.log(`\nResult written to: ${outPath}`);
 
   } catch (err) {
