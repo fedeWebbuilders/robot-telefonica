@@ -400,7 +400,7 @@ async function runTiendasFlow(page, config, rows) {
   const numAbonoCols = Math.max(...resultData.map(d => d.abonos.length), 1);
   const headers = ['CIF', ...Array.from({ length: numDescCols }, (_, i) => `Descripción_${i + 1}`), ...Array.from({ length: numAbonoCols }, (_, i) => `Abono_${i + 1}`)];
 
-  const rows = resultData.map(({ cif, descripciones, abonos }) => {
+  const outputRows = resultData.map(({ cif, descripciones, abonos }) => {
     const descPart = [...descripciones];
     while (descPart.length < numDescCols) descPart.push('');
     const abonoPart = [...abonos];
@@ -408,7 +408,7 @@ async function runTiendasFlow(page, config, rows) {
     return [cif, ...descPart, ...abonoPart];
   });
 
-  return { headers, rows };
+  return { headers, rows: outputRows };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
