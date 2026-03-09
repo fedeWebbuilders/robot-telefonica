@@ -1,0 +1,7 @@
+Abrir terminal y hacer
+
+cd "C:\Users\Usuario\Desktop\Robot v2\robot-telefonica"
+
+
+Para ejecutar:
+npm start
