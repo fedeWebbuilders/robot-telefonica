@@ -451,6 +451,12 @@ async function main() {
   console.log(`\nLogging in as: ${config.username}`);
   console.log(`URL: ${config.url}\n`);
 
+  const tiendas = config.tiendas || {};
+  const loginUserPrompt = await prompt(`Tiendas login user (optional, default from config): `);
+  const loginPasswordPrompt = await prompt(`Tiendas login password (optional, default from config): `);
+  const loginUser = (loginUserPrompt && loginUserPrompt.trim()) ? loginUserPrompt.trim() : tiendas.loginUser;
+  const loginPassword = (loginPasswordPrompt && loginPasswordPrompt.trim()) ? loginPasswordPrompt.trim() : tiendas.loginPassword;
+
   const artifactsDir = join(__dirname, 'playwright-artifacts');
   const videosDir = join(artifactsDir, 'videos');
   const tracesDir = join(artifactsDir, 'traces');
@@ -464,13 +470,12 @@ async function main() {
   const tracePath = join(tracesDir, `trace-${traceTimestamp}.zip`);
 
   const browser = await chromium.launch({ headless: config.headless || false });
-  const tiendas = config.tiendas || {};
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: { width: 1280, height: 720 },
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    httpCredentials: tiendas.loginUser && tiendas.loginPassword
-      ? { username: tiendas.loginUser, password: tiendas.loginPassword }
+    httpCredentials: loginUser && loginPassword
+      ? { username: loginUser, password: loginPassword }
       : undefined,
     recordVideo: { dir: videosDir },
   });
