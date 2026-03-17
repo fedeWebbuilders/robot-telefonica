@@ -6,10 +6,12 @@ Python 3.14 / Selenium 3.141.0
 """
 
 import pandas as pd
+import io
 import sys
 import warnings
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
+from selenium.webdriver.edge.service import Service as EdgeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -58,19 +60,15 @@ if len(sys.argv) < 4:
 
 username, password, path = sys.argv[1].strip(), sys.argv[2].strip(), sys.argv[3].strip()
 
-# Configuracion de capacidades para Selenium 3
 options = EdgeOptions()
-options.use_chromium = True 
-caps = options.to_capabilities() # Convertimos options a capabilities para maxima compatibilidad
 
 browser = None
 
 try:
-    # Ruta al driver
-    driver_path = r'C:\\Users\\Usuario\\Desktop\\prueba\\Robot_HECO\\msedgedriver.exe'
-    
-    # CAMBIO CLAVE: Usamos capabilities en lugar de options para evitar el error __init__
-    browser = webdriver.Edge(executable_path=driver_path, capabilities=caps)
+    import os
+    driver_path = os.path.expanduser('~/Downloads/edgedriver_mac64_m1/msedgedriver')
+    service = EdgeService(executable_path=driver_path)
+    browser = webdriver.Edge(service=service, options=options)
     
     try:
         lista_CIFs = pd.read_excel(path)
@@ -104,25 +102,25 @@ try:
             browser.switch_to.frame('Principal')
             
             tables = browser.find_elements(By.CLASS_NAME, 'sortable')
-            
+
             if len(tables) >= 1:
                 try:
                     html_t1 = tables[0].get_attribute('outerHTML')
-                    df_t1 = pd.read_html(html_t1, header=0, decimal=',', thousands='.')[0]
+                    df_t1 = pd.read_html(io.StringIO(html_t1), header=0, decimal=',', thousands='.', flavor='html5lib')[0]
                     segmento = df_t1.iloc[0]['Segmento']
                     boletines_fecha = df_t1.iloc[0]['Fecha']
-                    boletines_actuacion = df_t1.iloc[0]['Actuacion']
+                    boletines_actuacion = df_t1.iloc[0]['Actuación']
                 except:
                     pass
 
                 if len(tables) == 2:
                     try:
                         html_t2 = tables[1].get_attribute('outerHTML')
-                        df_t2 = pd.read_html(html_t2, header=0, decimal=',', thousands='.')[0]
+                        df_t2 = pd.read_html(io.StringIO(html_t2), header=0, decimal=',', thousands='.', flavor='html5lib')[0]
                         f_f_pri = df_t2.iloc[0]['Fecha']
-                        f_a_pri = df_t2.iloc[0]['Actuacion']
+                        f_a_pri = df_t2.iloc[0]['Actuación']
                         f_f_ult = df_t2.iloc[-1]['Fecha']
-                        f_a_ult = df_t2.iloc[-1]['Actuacion']
+                        f_a_ult = df_t2.iloc[-1]['Actuación']
                     except:
                         print("Sin datos de fusion para: " + str(cif))
 
@@ -135,7 +133,7 @@ try:
                 'LISTADO DE BOLETINES DE FUSION FECHA ULTIMA': f_f_ult,
                 'LISTADO DE BOLETINES DE FUSION ACTUACION ULTIMA': f_a_ult
             }
-            listaCIFs_boletines = listaCIFs_boletines.append(data_to_add, ignore_index=True)
+            listaCIFs_boletines = pd.concat([listaCIFs_boletines, pd.DataFrame([data_to_add])], ignore_index=True)
 
         except Exception as e:
             print("Error procesando CIF " + str(cif) + ": " + str(e))
