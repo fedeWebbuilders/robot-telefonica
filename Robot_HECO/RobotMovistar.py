@@ -8,6 +8,8 @@ Python 3.14 / Selenium 3.141.0
 import pandas as pd
 import io
 import sys
+import json
+import os
 import warnings
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options as EdgeOptions
@@ -55,18 +57,26 @@ def sent_customer_data(browser, element, cif):
 # --- LOGICA PRINCIPAL ---
 
 if len(sys.argv) < 4:
-    print("Error: Faltan argumentos (User, Pass, Path)")
+    print("Uso: python RobotMovistar.py <user> <pwd> <archivo.xlsx> [driver_path]")
     sys.exit()
 
 username, password, path = sys.argv[1].strip(), sys.argv[2].strip(), sys.argv[3].strip()
+
+
+config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+try:
+    with open(config_path) as f:
+        config = json.load(f)
+    driver_path = os.path.expanduser(config['driver_path'])
+except Exception as e:
+    print(f"Error leyendo config.json: {e}")
+    sys.exit()
 
 options = EdgeOptions()
 
 browser = None
 
 try:
-    import os
-    driver_path = os.path.expanduser('~/Downloads/edgedriver_mac64_m1/msedgedriver')
     service = EdgeService(executable_path=driver_path)
     browser = webdriver.Edge(service=service, options=options)
     
